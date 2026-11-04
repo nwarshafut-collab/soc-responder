@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
-from engine import load_logs, run_pipeline, simulate_action
+from engine import (load_logs, run_pipeline, simulate_action, response_summary,
+                    asset_table, build_dot, incident_report)
 
 st.set_page_config(page_title="Agentic SOC Responder", page_icon="🛡️", layout="wide")
 
@@ -38,7 +39,7 @@ if not events:
 res = run_pipeline(events)
 chains = res["chains"]
 
-tab1, tab2, tab3, tab4 = st.tabs(["📊 Dashboard", "🕒 Attack Timeline", "✅ Response Center", "🗺️ Roadmap"])
+tab1, tab2, tab3, tab4 = st.tabs(["📊 Dashboard", "🕒 Attack Timeline", "🛡️ After Detection: Response", "🗺️ Roadmap"])
 
 # ---------- Dashboard ----------
 with tab1:
@@ -75,12 +76,25 @@ with tab2:
                 "Host": a["host"], "Detail": a["description"]} for a in c["alerts"]]),
                 use_container_width=True, hide_index=True)
 
-# ---------- Response Center ----------
+# ---------- Response Center (after detection) ----------
 with tab3:
-    st.write("The system **recommends**; the analyst **decides**. Nothing runs without approval "
-             "(and execution here is simulated).")
+    st.markdown("### After Detection: what happens next?")
+    st.write("Detection ends when the alert is raised. This step turns the attack story into a **response plan**. "
+             "The system recommends, the **analyst decides**, and every decision is logged. "
+             "(Execution is simulated in this prototype.)")
+    rs = response_summary(chains, st.session_state.decisions)
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Recommended actions", rs["total"])
+    m2.metric("Approved (mitigated)", rs["approved"])
+    m3.metric("Pending decision", rs["pending"])
+    m4.metric("Threat contained", f"{rs['contained_pct']}%")
+    st.progress(rs["contained_pct"] / 100)
+
     for c in chains:
+        st.divider()
         st.subheader(f"{SEV_ICON[c['severity']]} {c['id']} – {c['source_ip']}")
+        st.graphviz_chart(build_dot(c, st.session_state.decisions), use_container_width=True)
+        st.caption("Blue = pending, green = approved, grey = rejected")
         for a in c["actions"]:
             col1, col2, col3 = st.columns([5, 1, 1])
             col1.markdown(f"**{a['action']}** → `{a['target']}`  \n_{a['reason']}_")
@@ -96,6 +110,13 @@ with tab3:
                     st.session_state.decisions[a["id"]] = "rejected"
                     st.session_state.audit.append(f"[REJECTED] {a['action']} on {a['target']}")
                     st.rerun()
+        st.download_button("⬇️ Download incident report", incident_report(c, st.session_state.decisions),
+                           file_name=f"{c['id']}_report.txt", key="dl_" + c["id"])
+
+    st.divider()
+    st.subheader("Asset status")
+    st.dataframe(pd.DataFrame(asset_table(chains, st.session_state.decisions)),
+                 use_container_width=True, hide_index=True)
     st.subheader("Audit log")
     if st.session_state.audit:
         for line in st.session_state.audit:

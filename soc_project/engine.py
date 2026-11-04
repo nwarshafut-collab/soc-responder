@@ -144,3 +144,71 @@ def run_pipeline(events):
 def simulate_action(action):
     """SIMULATED execution (nothing real is touched). Real sandbox/Docker later."""
     return f"[SIMULATED] {action['action']} executed on {action['target']}"
+
+
+# ---------------- After-Detection helpers (v2) ----------------
+def action_status(action, decisions):
+    d = decisions.get(action["id"])
+    return {"approved": "Mitigated", "rejected": "Left as-is (rejected)"}.get(d, "Pending analyst decision")
+
+
+def response_summary(chains, decisions):
+    acts = [a for c in chains for a in c["actions"]]
+    total = len(acts)
+    approved = sum(1 for a in acts if decisions.get(a["id"]) == "approved")
+    rejected = sum(1 for a in acts if decisions.get(a["id"]) == "rejected")
+    return {"total": total, "approved": approved, "rejected": rejected,
+            "pending": total - approved - rejected,
+            "contained_pct": int(round(100 * approved / total)) if total else 0}
+
+
+def asset_table(chains, decisions):
+    """What the response does to each asset (IP / account / host)."""
+    kind = {"Block IP": "Attacker IP", "Disable account": "User account", "Isolate host": "Server"}
+    rows = []
+    for c in chains:
+        for a in c["actions"]:
+            rows.append({"Incident": c["id"], "Asset": a["target"], "Type": kind.get(a["action"], "Asset"),
+                         "Action": a["action"], "Status": action_status(a, decisions)})
+    return rows
+
+
+def build_dot(chain, decisions):
+    """Graphviz DOT text of the attack path + the recommended responses."""
+    L = ["digraph G {", "rankdir=LR;", 'bgcolor="transparent";',
+         'node [shape=box, style="rounded,filled", fontname="Arial", fontcolor="white"];',
+         'edge [color="#9aa5b1"];',
+         f'atk [label="Attacker\\n{chain["source_ip"]}", fillcolor="#c0392b"];']
+    prev = "atk"
+    for i, s in enumerate(chain["stages"]):
+        L.append(f's{i} [label="{s}", fillcolor="#e67e22"];')
+        L.append(f"{prev} -> s{i};")
+        prev = f"s{i}"
+    host = chain["hosts"][0]
+    L.append(f'host [label="Target\\n{host}", fillcolor="#34495e"];')
+    L.append(f"{prev} -> host;")
+    for j, a in enumerate(chain["actions"]):
+        d = decisions.get(a["id"])
+        color = "#27ae60" if d == "approved" else "#7f8c8d" if d == "rejected" else "#2980b9"
+        L.append(f'r{j} [label="{a["action"]}\\n{a["target"]}", fillcolor="{color}"];')
+        L.append(f'host -> r{j} [style=dashed];')
+    L.append("}")
+    return "\n".join(L)
+
+
+def incident_report(chain, decisions):
+    lines = [f"INCIDENT REPORT {chain['id']}", "=" * 40,
+             f"Severity : {chain['severity']}", f"Source   : {chain['source_ip']}",
+             f"Targets  : {', '.join(chain['hosts'])}", f"Period   : {chain['start']} -> {chain['end']}", "",
+             "SUMMARY", chain["summary"], ""]
+    if chain["threat_intel"]:
+        lines += ["THREAT INTELLIGENCE", chain["threat_intel"], ""]
+    lines.append("ATTACK TIMELINE (MITRE ATT&CK)")
+    for a in chain["alerts"]:
+        lines.append(f"- {a['timestamp']} | {a['tactic']} | {a['technique_id']} {a['technique']} | {a['description']}")
+    lines += ["", "RESPONSE ACTIONS"]
+    for a in chain["actions"]:
+        lines.append(f"- {a['action']} -> {a['target']} | {action_status(a, decisions)}")
+        lines.append(f"    Reason: {a['reason']}")
+    lines += ["", "Note: actions are simulated in this prototype."]
+    return "\n".join(lines)
