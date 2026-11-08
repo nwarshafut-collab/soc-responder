@@ -1,17 +1,19 @@
 """
-Core logic of the SOC Triage & Response prototype (v1: rule-based).
-Later versions will replace/extend these steps with LLM agents (LangChain/LangGraph).
-
-Pipeline:  parse logs -> detect alerts -> enrich (threat intel) -> build attack chains
-           -> assess severity -> recommend response actions
+Core logic of the SOC Triage & Response system (v3: Gemini AI Integrated).
+Pipeline: parse logs -> detect alerts -> enrich (threat intel) -> build attack chains
+          -> AI reasoning & severity -> recommend response actions
 """
 import csv
 import io
+import os
+import json
+import urllib.request
 from collections import defaultdict
 
-# ---- Settings you can edit -------------------------------------------------
-TRUSTED_IPS = {"10.0.0.5": "Internal vulnerability scanner"}          # => false positives
-KNOWN_BAD_IPS = {                                                       # fake threat-intel
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "YOUR_GEMINI_API_KEY_HERE")
+
+TRUSTED_IPS = {"10.0.0.5": "Internal vulnerability scanner"}
+KNOWN_BAD_IPS = {
     "203.0.113.45": "Reported for SSH brute force and data theft (demo feed)",
 }
 PORT_SCAN_THRESHOLD = 10
@@ -24,7 +26,26 @@ MITRE = {
     "PRIV_ESC":         ("Privilege Escalation", "T1548", "Abuse Elevation Control Mechanism"),
     "EXFILTRATION":     ("Exfiltration",         "T1041", "Exfiltration Over C2 Channel"),
 }
-# ---------------------------------------------------------------------------
+
+
+def ask_gemini_ai(prompt_text):
+    """Connects directly to Google Gemini API."""
+    if not GEMINI_API_KEY or GEMINI_API_KEY == "YOUR_GEMINI_API_KEY_HERE":
+        return None
+    url = f"https://googleapis.com{GEMINI_API_KEY}"
+    payload = {"contents": [{"parts": [{"text": prompt_text}]}]}
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST"
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            result = json.loads(resp.read().decode("utf-8"))
+            return result["candidates"][0]["content"]["parts"][0]["text"].strip()
+    except Exception:
+        return None
 
 
 def load_logs(file_or_path):
@@ -82,7 +103,7 @@ def detect(events):
 
 
 def enrich(alerts):
-    """Threat-intelligence enrichment (demo feed; real APIs come in a later version)."""
+    """Threat-intelligence enrichment."""
     for a in alerts:
         a["threat_intel"] = KNOWN_BAD_IPS.get(a["source_ip"])
     return alerts
@@ -114,7 +135,17 @@ def build_chains(alerts):
 
 
 def summarize(c):
+    """Uses Gemini AI to generate an intelligent SOC incident analysis, with rule-based fallback."""
     steps = " -> ".join(c["stages"])
+    prompt = (
+        f"You are an expert SOC AI Analyst. Write a concise 2-sentence security investigation summary "
+        f"for an incident from attacker IP {c['source_ip']} targeting {', '.join(c['hosts'])}. "
+        f"Observed MITRE attack stages: {steps}. Severity level: {c['severity']}. "
+        f"Threat intelligence context: {c['threat_intel'] or 'None'}. Explain the risk clearly."
+    )
+    ai_response = ask_gemini_ai(prompt)
+    if ai_response:
+        return f"🤖 [AI Analysis]: {ai_response}"
     return (f"Source {c['source_ip']} targeted {', '.join(c['hosts'])} between {c['start']} and {c['end']}. "
             f"Attack stages observed: {steps}. Severity: {c['severity']}.")
 
@@ -142,11 +173,11 @@ def run_pipeline(events):
 
 
 def simulate_action(action):
-    """SIMULATED execution (nothing real is touched). Real sandbox/Docker later."""
+    """SIMULATED execution (nothing real is touched)."""
     return f"[SIMULATED] {action['action']} executed on {action['target']}"
 
 
-# ---------------- After-Detection helpers (v2) ----------------
+# ---------------- After-Detection helpers ----------------
 def action_status(action, decisions):
     d = decisions.get(action["id"])
     return {"approved": "Mitigated", "rejected": "Left as-is (rejected)"}.get(d, "Pending analyst decision")
@@ -183,32 +214,3 @@ def build_dot(chain, decisions):
     for i, s in enumerate(chain["stages"]):
         L.append(f's{i} [label="{s}", fillcolor="#e67e22"];')
         L.append(f"{prev} -> s{i};")
-        prev = f"s{i}"
-    host = chain["hosts"][0]
-    L.append(f'host [label="Target\\n{host}", fillcolor="#34495e"];')
-    L.append(f"{prev} -> host;")
-    for j, a in enumerate(chain["actions"]):
-        d = decisions.get(a["id"])
-        color = "#27ae60" if d == "approved" else "#7f8c8d" if d == "rejected" else "#2980b9"
-        L.append(f'r{j} [label="{a["action"]}\\n{a["target"]}", fillcolor="{color}"];')
-        L.append(f'host -> r{j} [style=dashed];')
-    L.append("}")
-    return "\n".join(L)
-
-
-def incident_report(chain, decisions):
-    lines = [f"INCIDENT REPORT {chain['id']}", "=" * 40,
-             f"Severity : {chain['severity']}", f"Source   : {chain['source_ip']}",
-             f"Targets  : {', '.join(chain['hosts'])}", f"Period   : {chain['start']} -> {chain['end']}", "",
-             "SUMMARY", chain["summary"], ""]
-    if chain["threat_intel"]:
-        lines += ["THREAT INTELLIGENCE", chain["threat_intel"], ""]
-    lines.append("ATTACK TIMELINE (MITRE ATT&CK)")
-    for a in chain["alerts"]:
-        lines.append(f"- {a['timestamp']} | {a['tactic']} | {a['technique_id']} {a['technique']} | {a['description']}")
-    lines += ["", "RESPONSE ACTIONS"]
-    for a in chain["actions"]:
-        lines.append(f"- {a['action']} -> {a['target']} | {action_status(a, decisions)}")
-        lines.append(f"    Reason: {a['reason']}")
-    lines += ["", "Note: actions are simulated in this prototype."]
-    return "\n".join(lines)
