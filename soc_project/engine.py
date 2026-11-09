@@ -151,8 +151,7 @@ def asset_table(chains, decisions):
 
 def build_dot(chain, decisions):
     return "digraph G { atk [label=\"Attacker\"]; }"
-    def incident_report(chain, decisions):
-    """Generates a structured text report for the incident."""
+def incident_report(chain, decisions):
     report_lines = [
         f"=== INCIDENT REPORT: {chain['id']} ===",
         f"Attacker IP: {chain['source_ip']}",
