@@ -60,8 +60,7 @@ def load_logs(file_or_path):
         text = file_or_path.getvalue().decode("utf-8") if hasattr(file_or_path, "getvalue") else file_or_path.read().decode("utf-8")
         rows = list(csv.DictReader(io.StringIO(text)))
     required = {"timestamp", "source_ip", "dest_host", "event_type", "details"}
-    first_row = next(iter(rows), {})
-    if not rows or not required.issubset(first_row.keys()):
+    if not rows or not required.issubset(rows[0].keys()):
         raise ValueError("CSV must have columns: " + ", ".join(sorted(required)))
     return sorted(rows, key=lambda r: r["timestamp"])
 
@@ -92,13 +91,11 @@ def detect(events):
 
     for (ip, host), ev in probes.items():
         if len(ev) >= PORT_SCAN_THRESHOLD:
-            first_ev = next(iter(ev))
-            a = _alert("PORT_SCAN", ip, host, first_ev["timestamp"], f"{len(ev)} ports probed", len(ev))
+            a = _alert("PORT_SCAN", ip, host, ev[0]["timestamp"], f"{len(ev)} ports probed", len(ev))
             (false_positives if ip in TRUSTED_IPS else alerts).append(a)
     for (ip, host), ev in fails.items():
         if len(ev) >= BRUTE_FORCE_THRESHOLD:
-            first_ev = next(iter(ev))
-            alerts.append(_alert("BRUTE_FORCE", ip, host, first_ev["timestamp"], f"{len(ev)} failed logins", len(ev)))
+            alerts.append(_alert("BRUTE_FORCE", ip, host, ev[0]["timestamp"], f"{len(ev)} failed logins", len(ev)))
             for s in successes.get((ip, host), []):
                 if s["timestamp"] > ev[-1]["timestamp"]:
                     alerts.append(_alert("LOGIN_AFTER_FAIL", ip, host, s["timestamp"],
@@ -127,11 +124,10 @@ def build_chains(alerts):
         intel = next((a["threat_intel"] for a in items if a["threat_intel"]), None)
         score = len(stages) + (1 if intel else 0)
         severity = "Critical" if score >= 5 else "High" if score >= 3 else "Medium" if score >= 2 else "Low"
-        first_item = next(iter(items))
         chains.append({"id": f"INC-{len(chains)+1:03d}", "source_ip": ip, "alerts": items,
                        "stages": stages, "severity": severity, "threat_intel": intel,
                        "hosts": sorted({a["host"] for a in items}),
-                       "start": first_item["timestamp"], "end": items[-1]["timestamp"]})
+                       "start": items[0]["timestamp"], "end": items[-1]["timestamp"]})
     order = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
     chains.sort(key=lambda c: order[c["severity"]])
     for i, c in enumerate(chains, 1):
@@ -166,7 +162,7 @@ def recommend(c):
         acts.append({"id": f"{c['id']}-A2", "action": "Disable account", "target": "admin",
                      "reason": "Account was accessed after a brute-force attack and is likely compromised."})
     if kinds & {"PRIV_ESC", "EXFILTRATION"}:
-        host = next(iter(c["hosts"]))
+        host = c["hosts"][0]
         acts.append({"id": f"{c['id']}-A3", "action": "Isolate host", "target": host,
                      "reason": "Privilege escalation and/or data exfiltration detected on this host."})
     return acts
@@ -215,3 +211,7 @@ def build_dot(chain, decisions):
     """Graphviz DOT text of the attack path + the recommended responses."""
     L = ["digraph G {", "rankdir=LR;", 'bgcolor="transparent";',
          'node [shape=box, style="rounded,filled", fontname="Arial", fontcolor="white"];',
+         'edge [color="#9aa5b1"];',
+         f'atk [label="Attacker\\n{chain["source_ip"]}", fillcolor="#c0392b"];']
+    prev = "atk"
+    for i, s in enumerate(chain["stages"]):
