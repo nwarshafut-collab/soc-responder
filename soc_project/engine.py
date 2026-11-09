@@ -74,7 +74,7 @@ def detect(events):
         elif e["event_type"] == "large_outbound_transfer":
             alerts.append(_alert("EXFILTRATION", e["source_ip"], e["dest_host"], e["timestamp"], e["details"], 1))
 
-       for (ip, host), ev in probes.items():
+    for (ip, host), ev in probes.items():
         if len(ev) >= PORT_SCAN_THRESHOLD:
             a = _alert("PORT_SCAN", ip, host, ev[0]["timestamp"], f"{len(ev)} ports probed", len(ev))
             if ip in TRUSTED_IPS:
@@ -82,6 +82,7 @@ def detect(events):
                 false_positives.append(a)
             else:
                 alerts.append(a)
+
     for (ip, host), ev in fails.items():
         if len(ev) >= BRUTE_FORCE_THRESHOLD:
             alerts.append(_alert("BRUTE_FORCE", ip, host, ev[0]["timestamp"], f"{len(ev)} failed logins", len(ev)))
@@ -155,6 +156,7 @@ def asset_table(chains, decisions):
 
 def build_dot(chain, decisions):
     return "digraph G { atk [label=\"Attacker\"]; }"
+
 def incident_report(chain, decisions):
     report_lines = [
         f"=== INCIDENT REPORT: {chain['id']} ===",
