@@ -74,10 +74,14 @@ def detect(events):
         elif e["event_type"] == "large_outbound_transfer":
             alerts.append(_alert("EXFILTRATION", e["source_ip"], e["dest_host"], e["timestamp"], e["details"], 1))
 
-    for (ip, host), ev in probes.items():
+       for (ip, host), ev in probes.items():
         if len(ev) >= PORT_SCAN_THRESHOLD:
             a = _alert("PORT_SCAN", ip, host, ev[0]["timestamp"], f"{len(ev)} ports probed", len(ev))
-            (false_positives if ip in TRUSTED_IPS else alerts).append(a)
+            if ip in TRUSTED_IPS:
+                a["reason"] = TRUSTED_IPS[ip]
+                false_positives.append(a)
+            else:
+                alerts.append(a)
     for (ip, host), ev in fails.items():
         if len(ev) >= BRUTE_FORCE_THRESHOLD:
             alerts.append(_alert("BRUTE_FORCE", ip, host, ev[0]["timestamp"], f"{len(ev)} failed logins", len(ev)))
