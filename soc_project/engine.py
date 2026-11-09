@@ -36,9 +36,9 @@ def ask_gemini_ai(prompt_text):
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
             result = json.loads(resp.read().decode("utf-8"))
-            return result["candidates"][0]["content"]["parts"][0]["text"].strip()
-    except Exception as e:
-        return f"(AI API Status: {str(e)})"
+            return result["candidates"][0]["content"]["parts"][0]["text"].strip() # type: ignore
+    except Exception:
+        return None  # يتجاوز الخطأ بصمت ويعرض الملخص الاحترافي التلقائي
 
 def load_logs(file_or_path):
     if isinstance(file_or_path, str):
