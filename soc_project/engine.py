@@ -1,8 +1,3 @@
-"""
-Core logic of the SOC Triage & Response system (v3: Gemini AI Integrated).
-Pipeline: parse logs -> detect alerts -> enrich (threat intel) -> build attack chains
-          -> AI reasoning & severity -> recommend response actions
-"""
 import csv
 import io
 import os
@@ -32,7 +27,7 @@ def ask_gemini_ai(prompt_text):
     """Connects directly to Google Gemini API."""
     if not GEMINI_API_KEY or GEMINI_API_KEY == "YOUR_GEMINI_API_KEY_HERE":
         return None
-    url = "https://googleapis.com"
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
     payload = {"contents": [{"parts": [{"text": prompt_text}]}]}
     req = urllib.request.Request(
         url,
@@ -125,93 +120,4 @@ def build_chains(alerts):
         score = len(stages) + (1 if intel else 0)
         severity = "Critical" if score >= 5 else "High" if score >= 3 else "Medium" if score >= 2 else "Low"
         chains.append({"id": f"INC-{len(chains)+1:03d}", "source_ip": ip, "alerts": items,
-                       "stages": stages, "severity": severity, "threat_intel": intel,
-                       "hosts": sorted({a["host"] for a in items}),
-                       "start": items[0]["timestamp"], "end": items[-1]["timestamp"]})
-    order = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
-    chains.sort(key=lambda c: order[c["severity"]])
-    for i, c in enumerate(chains, 1):
-        c["id"] = f"INC-{i:03d}"
-        c["summary"] = summarize(c)
-        c["actions"] = recommend(c)
-    return chains
-
-
-def summarize(c):
-    """Uses Gemini AI to generate an intelligent SOC incident analysis, with rule-based fallback."""
-    steps = " -> ".join(c["stages"])
-    prompt = (
-        f"You are an expert SOC AI Analyst. Write a concise 2-sentence security investigation summary "
-        f"for an incident from attacker IP {c['source_ip']} targeting {', '.join(c['hosts'])}. "
-        f"Observed MITRE attack stages: {steps}. Severity level: {c['severity']}. "
-        f"Threat intelligence context: {c['threat_intel'] or 'None'}. Explain the risk clearly."
-    )
-    ai_response = ask_gemini_ai(prompt)
-    if ai_response:
-        return f"🤖 [AI Analysis]: {ai_response}"
-    return (f"Source {c['source_ip']} targeted {', '.join(c['hosts'])} between {c['start']} and {c['end']}. "
-            f"Attack stages observed: {steps}. Severity: {c['severity']}.")
-
-
-def recommend(c):
-    """Recommended response actions, each with a reason. Executed only after analyst approval."""
-    kinds = {a["kind"] for a in c["alerts"]}
-    acts = [{"id": f"{c['id']}-A1", "action": "Block IP", "target": c["source_ip"],
-             "reason": f"Source performed {len(c['alerts'])} malicious actions across {len(c['stages'])} attack stage(s)."}]
-    if "LOGIN_AFTER_FAIL" in kinds:
-        acts.append({"id": f"{c['id']}-A2", "action": "Disable account", "target": "admin",
-                     "reason": "Account was accessed after a brute-force attack and is likely compromised."})
-    if kinds & {"PRIV_ESC", "EXFILTRATION"}:
-        host = c["hosts"][0]
-        acts.append({"id": f"{c['id']}-A3", "action": "Isolate host", "target": host,
-                     "reason": "Privilege escalation and/or data exfiltration detected on this host."})
-    return acts
-
-
-def run_pipeline(events):
-    alerts, fps = detect(events)
-    alerts = enrich(alerts)
-    chains = build_chains(alerts)
-    return {"events": events, "alerts": alerts, "false_positives": fps, "chains": chains}
-
-
-def simulate_action(action):
-    """SIMULATED execution (nothing real is touched)."""
-    return f"[SIMULATED] {action['action']} executed on {action['target']}"
-
-
-# ---------------- After-Detection helpers ----------------
-def action_status(action, decisions):
-    d = decisions.get(action["id"])
-    return {"approved": "Mitigated", "rejected": "Left as-is (rejected)"}.get(d, "Pending analyst decision")
-
-
-def response_summary(chains, decisions):
-    acts = [a for c in chains for a in c["actions"]]
-    total = len(acts)
-    approved = sum(1 for a in acts if decisions.get(a["id"]) == "approved")
-    rejected = sum(1 for a in acts if decisions.get(a["id"]) == "rejected")
-    return {"total": total, "approved": approved, "rejected": rejected,
-            "pending": total - approved - rejected,
-            "contained_pct": int(round(100 * approved / total)) if total else 0}
-
-
-def asset_table(chains, decisions):
-    """What the response does to each asset (IP / account / host)."""
-    kind = {"Block IP": "Attacker IP", "Disable account": "User account", "Isolate host": "Server"}
-    rows = []
-    for c in chains:
-        for a in c["actions"]:
-            rows.append({"Incident": c["id"], "Asset": a["target"], "Type": kind.get(a["action"], "Asset"),
-                         "Action": a["action"], "Status": action_status(a, decisions)})
-    return rows
-
-
-def build_dot(chain, decisions):
-    """Graphviz DOT text of the attack path + the recommended responses."""
-    L = ["digraph G {", "rankdir=LR;", 'bgcolor="transparent";',
-         'node [shape=box, style="rounded,filled", fontname="Arial", fontcolor="white"];',
-         'edge [color="#9aa5b1"];',
-         f'atk [label="Attacker\\n{chain["source_ip"]}", fillcolor="#c0392b"];']
-    prev = "atk"
-    for i, s in enumerate(chain["stages"]):
+                       "stages": stages, "severity": severity,
