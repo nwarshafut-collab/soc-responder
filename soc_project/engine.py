@@ -151,3 +151,19 @@ def asset_table(chains, decisions):
 
 def build_dot(chain, decisions):
     return "digraph G { atk [label=\"Attacker\"]; }"
+    def incident_report(chain, decisions):
+    """Generates a structured text report for the incident."""
+    report_lines = [
+        f"=== INCIDENT REPORT: {chain['id']} ===",
+        f"Attacker IP: {chain['source_ip']}",
+        f"Severity: {chain['severity']}",
+        f"Target Hosts: {', '.join(chain['hosts'])}",
+        f"Time Window: {chain['start']} to {chain['end']}",
+        f"Attack Stages: {' -> '.join(chain['stages'])}",
+        f"Summary: {chain['summary']}",
+        "\n--- Response Actions ---"
+    ]
+    for a in chain['actions']:
+        status = action_status(a, decisions)
+        report_lines.append(f"- [{a['action']}] target: {a['target']} | Status: {status}")
+    return "\n".join(report_lines)
