@@ -172,3 +172,4 @@ def incident_report(chain, decisions):
         status = action_status(a, decisions)
         report_lines.append(f"- [{a['action']}] target: {a['target']} | Status: {status}")
     return "\n".join(report_lines)
+
