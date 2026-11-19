@@ -51,8 +51,8 @@ def load_logs(file_or_path):
         text = file_or_path.getvalue().decode("utf-8") if hasattr(file_or_path, "getvalue") else file_or_path.read().decode("utf-8")
         rows = list(csv.DictReader(io.StringIO(text)))
         if rows and "traffic_count" in rows[0]:
-        converted = []
-        for r in rows:
+            converted = []
+            for r in rows:
             converted.append({
                 "timestamp": r["timestamp"],
                 "source_ip": f"Botnet ({r['source_count']} sources)",
