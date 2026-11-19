@@ -53,12 +53,12 @@ def load_logs(file_or_path):
         if rows and "traffic_count" in rows[0]:
             converted = []
             for r in rows:
-            converted.append({
-                "timestamp": r["timestamp"],
-                "source_ip": f"Botnet ({r['source_count']} sources)",
-                "dest_host": r["destination"],
-                "event_type": "ddos_attack",
-                "details": f"Traffic: {r['traffic_count']} | {r['reason']}"
+                converted.append({
+                    "timestamp": r["timestamp"],
+                    "source_ip": f"Botnet ({r['source_count']} sources)",
+                    "dest_host": r["destination"],
+                    "event_type": "ddos_attack",
+                    "details": f"Traffic: {r['traffic_count']} | {r['reason']}"
             })
         return sorted(converted, key=lambda r: r["timestamp"])
     required = {"timestamp", "source_ip", "dest_host", "event_type", "details"}
