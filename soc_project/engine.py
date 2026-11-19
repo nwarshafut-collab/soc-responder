@@ -125,7 +125,8 @@ def build_chains(alerts):
         items.sort(key=lambda a: a["timestamp"])
         stages = list(dict.fromkeys(a["tactic"] for a in items))
         intel = next((a["threat_intel"] for a in items if a["threat_intel"]), None)
-        score = len(stages) + (1 if intel else 0)
+        has_ddos_or_ransom = any(a["kind"] in ("DDOS", "RANSOMWARE") for a in items)
+        score = len(stages) + (1 if intel else 0) + (2 if has_ddos_or_ransom else 0) + (1 if len(items) >= 5 else 0)
         severity = "Critical" if score >= 5 else "High" if score >= 3 else "Medium" if score >= 2 else "Low"
         chains.append({"id": f"INC-{len(chains)+1:03d}", "source_ip": ip, "alerts": items,
                        "stages": stages, "severity": severity, "threat_intel": intel,
