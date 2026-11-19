@@ -26,14 +26,16 @@ MITRE = {
 }
 
 def ask_gemini_ai(prompt_text):
-    if not GEMINI_API_KEY or GEMINI_API_KEY == "YOUR_GEMINI_API_KEY_HERE":
+    import streamlit as st
+    api_key = st.secrets.get("GEMINI_API_KEY", os.environ.get("GEMINI_API_KEY", ""))
+    if not api_key or api_key == "YOUR_GEMINI_API_KEY_HERE":
         return None
     url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
     payload = {"contents": [{"parts": [{"text": prompt_text}]}]}
     req = urllib.request.Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json", "x-goog-api-key": GEMINI_API_KEY.strip()},
+        headers={"Content-Type": "application/json", "x-goog-api-key": api_key.strip()},
         method="POST"
     )
     try:
