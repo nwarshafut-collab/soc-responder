@@ -93,6 +93,7 @@ with tab3:
     for c in chains:
         st.divider()
         st.subheader(f"{SEV_ICON[c['severity']]} {c['id']} – {c['source_ip']}")
+        st.info(c["summary"])
         st.graphviz_chart(build_dot(c, st.session_state.decisions), use_container_width=True)
         st.caption("Blue = pending, green = approved, grey = rejected")
         for a in c["actions"]:
