@@ -175,8 +175,27 @@ def asset_table(chains, decisions):
     return rows
 
 def build_dot(chain, decisions):
-    return "digraph G { atk [label=\"Attacker\"]; }"
+    is_mitigated = any(decisions.get(a["id"]) == "approved" for a in chain["actions"])
+    target_color = "#10b981" if is_mitigated else "#f59e0b"
+    target_fill = "#064e3b" if is_mitigated else "#451a03"
+    target_status = "Protected (Mitigated)" if is_mitigated else "Under Attack"
+    stages_text = " -> ".join(chain["stages"])
+    hosts_text = ", ".join(chain["hosts"])
+    return f'''
+    digraph G {{
+        rankdir=LR;
+        bgcolor="#0e1117";
+        node [shape=box, style="rounded,filled", fontname="Arial", fontsize=11, margin="0.25,0.18", penwidth=2];
+        edge [color="#64748b", penwidth=2, arrowsize=0.8];
 
+        atk [label="THREAT SOURCE\\n\\n{chain['source_ip']}\\nSeverity: {chain['severity']}", fillcolor="#450a0a", color="#ef4444", fontcolor="#fecaca"];
+        stg [label="ATTACK STAGE\\n\\n{stages_text}", fillcolor="#431407", color="#f97316", fontcolor="#fed7aa"];
+        tgt [label="TARGET HOST\\n\\n{hosts_text}\\nStatus: {target_status}", fillcolor="{target_fill}", color="{target_color}", fontcolor="#ffffff"];
+
+        atk -> stg [color="#ef4444"];
+        stg -> tgt [color="{target_color}"];
+    }}
+    '''
 def incident_report(chain, decisions):
     report_lines = [
         f"=== INCIDENT REPORT: {chain['id']} ===",
