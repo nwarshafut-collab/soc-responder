@@ -156,7 +156,59 @@ def summarize(c):
     return f"Source {c['source_ip']} targeted {', '.join(c['hosts'])}. Stages: {steps}. Severity: {c['severity']}."
 
 def recommend(c):
-    return [{"id": f"{c['id']}-A1", "action": "Block IP", "target": c["source_ip"], "reason": "Malicious activity detected."}]
+    acts = []
+    kinds = {a["kind"] for a in c["alerts"]}
+    sev = c["severity"]
+
+    if "DDOS" in kinds:
+        best_ddos = (sev in ("Critical", "High"))
+        acts.append({
+            "id": f"{c['id']}-A1",
+            "action": ("⭐ [Best Solution] Enable DDoS Rate-Limiting" if best_ddos else "Enable DDoS Rate-Limiting"),
+            "target": ", ".join(c["hosts"]),
+            "reason": f"Severity is {sev}: Rate-limiting absorbs volumetric flood immediately without shutting down the server."
+        })
+        acts.append({
+            "id": f"{c['id']}-A2",
+            "action": ("Block Botnet IPs" if best_ddos else "⭐ [Best Solution] Block Botnet IPs"),
+            "target": c["source_ip"],
+            "reason": "Block attacking source IPs at the perimeter firewall."
+        })
+        acts.append({
+            "id": f"{c['id']}-A3",
+            "action": "Isolate Target Host",
+            "target": ", ".join(c["hosts"]),
+            "reason": "Last-resort option: completely disconnect server if traffic overwhelms defenses."
+        })
+        return acts
+
+    is_critical_host = sev == "Critical" and ("PRIV_ESC" in kinds or "EXFILTRATION" in kinds or "RANSOMWARE" in kinds)
+    is_med_account = not is_critical_host and ("LOGIN_AFTER_FAIL" in kinds or "BRUTE_FORCE" in kinds)
+
+    acts.append({
+        "id": f"{c['id']}-A1",
+        "action": ("⭐ [Best Solution] Block IP" if (not is_critical_host and not is_med_account) else "Block IP"),
+        "target": c["source_ip"],
+        "reason": f"Severity is {sev}: Blocking external source IP stops reconnaissance and external probes."
+    })
+
+    if "LOGIN_AFTER_FAIL" in kinds or "BRUTE_FORCE" in kinds or len(kinds) >= 2:
+        acts.append({
+            "id": f"{c['id']}-A2",
+            "action": ("⭐ [Best Solution] Disable account" if is_med_account else "Disable account"),
+            "target": "admin",
+            "reason": f"Severity is {sev}: Compromised credentials detected; disabling account prevents lateral movement."
+        })
+
+    if "PRIV_ESC" in kinds or "EXFILTRATION" in kinds or "RANSOMWARE" in kinds or len(kinds) >= 2:
+        acts.append({
+            "id": f"{c['id']}-A3",
+            "action": ("⭐ [Best Solution] Isolate host" if is_critical_host else "Isolate host"),
+            "target": ", ".join(c["hosts"]),
+            "reason": f"Severity is {sev} (Critical Impact): Immediate host isolation is the safest action to stop active breach/exfiltration."
+        })
+
+    return acts
 
 def run_pipeline(events):
     alerts, fps = detect(events)
