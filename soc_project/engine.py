@@ -111,9 +111,52 @@ def detect(events):
                     alerts.append(_alert("LOGIN_AFTER_FAIL", ip, host, s["timestamp"], f"Successful login after failures", 1))
     return sorted(alerts, key=lambda a: a["timestamp"]), false_positives
 
+ddef query_external_threat_intel(ip):
+    import streamlit as st
+    if ip.startswith(("10.", "192.168.", "172.", "Botnet")):
+        return None
+    vt_key = st.secrets.get("VIRUSTOTAL_API_KEY", os.environ.get("VIRUSTOTAL_API_KEY", ""))
+    abuse_key = st.secrets.get("ABUSEIPDB_API_KEY", os.environ.get("ABUSEIPDB_API_KEY", ""))
+
+    if abuse_key:
+        try:
+            req = urllib.request.Request(
+                f"https://" + "://abuseipdb.com" + f"{ip}&maxAgeInDays=90",
+                headers={"Key": abuse_key.strip(), "Accept": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read().decode("utf-8"))["data"]
+                score = data.get("abuseConfidenceScore", 0)
+                country = data.get("countryCode", "Unknown")
+                isp = data.get("isp", "Unknown ISP")
+                if score > 0:
+                    return f"AbuseIPDB Confidence: {score}% | Country: {country} | ISP: {isp}"
+        except Exception:
+            pass
+
+    if vt_key:
+        try:
+            req = urllib.request.Request(
+                f"https://" + "://virustotal.com" + f"{ip}",
+                headers={"x-apikey": vt_key.strip()}
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                stats = json.loads(resp.read().decode("utf-8"))["data"]["attributes"]["last_analysis_stats"]
+                mal = stats.get("malicious", 0)
+                if mal > 0:
+                    return f"VirusTotal Flagged: {mal} security vendors marked this IP malicious"
+        except Exception:
+            pass
+
+    return KNOWN_BAD_IPS.get(ip)
+
 def enrich(alerts):
+    cache = {}
     for a in alerts:
-        a["threat_intel"] = KNOWN_BAD_IPS.get(a["source_ip"])
+        ip = a["source_ip"]
+        if ip not in cache:
+            cache[ip] = query_external_threat_intel(ip)
+        a["threat_intel"] = cache[ip]
     return alerts
 
 def build_chains(alerts):
