@@ -20,6 +20,9 @@ MITRE = {
     "LOGIN_AFTER_FAIL": ("Initial Access",       "T1078", "Valid Accounts"),
     "PRIV_ESC":         ("Privilege Escalation", "T1548", "Abuse Elevation Control Mechanism"),
     "EXFILTRATION":     ("Exfiltration",         "T1041", "Exfiltration Over C2 Channel"),
+    "DDOS":             ("Impact",               "T1498", "Network Denial of Service"),
+    "RANSOMWARE":       ("Impact",               "T1486", "Data Encrypted for Impact"),
+    
 }
 
 def ask_gemini_ai(prompt_text):
@@ -47,10 +50,22 @@ def load_logs(file_or_path):
     else:
         text = file_or_path.getvalue().decode("utf-8") if hasattr(file_or_path, "getvalue") else file_or_path.read().decode("utf-8")
         rows = list(csv.DictReader(io.StringIO(text)))
+        if rows and "traffic_count" in rows[0]:
+        converted = []
+        for r in rows:
+            converted.append({
+                "timestamp": r["timestamp"],
+                "source_ip": f"Botnet ({r['source_count']} sources)",
+                "dest_host": r["destination"],
+                "event_type": "ddos_attack",
+                "details": f"Traffic: {r['traffic_count']} | {r['reason']}"
+            })
+        return sorted(converted, key=lambda r: r["timestamp"])
     required = {"timestamp", "source_ip", "dest_host", "event_type", "details"}
     if not rows or not required.issubset(rows[0].keys()):
         raise ValueError("CSV must have columns: " + ", ".join(sorted(required)))
     return sorted(rows, key=lambda r: r["timestamp"])
+        
 
 def _alert(kind, ip, host, ts, description, evidence_count):
     tactic, tid, tname = MITRE[kind]
@@ -73,7 +88,10 @@ def detect(events):
             alerts.append(_alert("PRIV_ESC", e["source_ip"], e["dest_host"], e["timestamp"], e["details"], 1))
         elif e["event_type"] == "large_outbound_transfer":
             alerts.append(_alert("EXFILTRATION", e["source_ip"], e["dest_host"], e["timestamp"], e["details"], 1))
-
+            elif e["event_type"] == "ddos_attack":
+            alerts.append(_alert("DDOS", e["source_ip"], e["dest_host"], e["timestamp"], e["details"], 1))
+        elif e["event_type"] == "ransomware":
+            alerts.append(_alert("RANSOMWARE", e["source_ip"], e["dest_host"], e["timestamp"], e["details"], 1))
     for (ip, host), ev in probes.items():
         if len(ev) >= PORT_SCAN_THRESHOLD:
             a = _alert("PORT_SCAN", ip, host, ev[0]["timestamp"], f"{len(ev)} ports probed", len(ev))
