@@ -60,7 +60,7 @@ def load_logs(file_or_path):
                     "event_type": "ddos_attack",
                     "details": f"Traffic: {r['traffic_count']} | {r['reason']}"
             })
-        return sorted(converted, key=lambda r: r["timestamp"])
+            return sorted(converted, key=lambda r: r["timestamp"])
     required = {"timestamp", "source_ip", "dest_host", "event_type", "details"}
     if not rows or not required.issubset(rows[0].keys()):
         raise ValueError("CSV must have columns: " + ", ".join(sorted(required)))
@@ -88,7 +88,7 @@ def detect(events):
             alerts.append(_alert("PRIV_ESC", e["source_ip"], e["dest_host"], e["timestamp"], e["details"], 1))
         elif e["event_type"] == "large_outbound_transfer":
             alerts.append(_alert("EXFILTRATION", e["source_ip"], e["dest_host"], e["timestamp"], e["details"], 1))
-            elif e["event_type"] == "ddos_attack":
+        elif e["event_type"] == "ddos_attack":
             alerts.append(_alert("DDOS", e["source_ip"], e["dest_host"], e["timestamp"], e["details"], 1))
         elif e["event_type"] == "ransomware":
             alerts.append(_alert("RANSOMWARE", e["source_ip"], e["dest_host"], e["timestamp"], e["details"], 1))
