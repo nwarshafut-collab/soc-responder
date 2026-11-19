@@ -111,17 +111,20 @@ def detect(events):
                     alerts.append(_alert("LOGIN_AFTER_FAIL", ip, host, s["timestamp"], f"Successful login after failures", 1))
     return sorted(alerts, key=lambda a: a["timestamp"]), false_positives
 
-ddef query_external_threat_intel(ip):
+def query_external_threat_intel(ip):
     import streamlit as st
-    if ip.startswith(("10.", "192.168.", "172.", "Botnet")):
-        return None
+    if not ip or ip.startswith(("10.", "192.168.", "172.", "Botnet")):
+        return KNOWN_BAD_IPS.get(ip)
+
+    clean_ip = urllib.parse.quote(ip.strip())
     vt_key = st.secrets.get("VIRUSTOTAL_API_KEY", os.environ.get("VIRUSTOTAL_API_KEY", ""))
     abuse_key = st.secrets.get("ABUSEIPDB_API_KEY", os.environ.get("ABUSEIPDB_API_KEY", ""))
 
     if abuse_key:
         try:
+            url = f"https://api.abuseipdb.com/api/v2/check?ipAddress={clean_ip}&maxAgeInDays=90"
             req = urllib.request.Request(
-                f"https://" + "://abuseipdb.com" + f"{ip}&maxAgeInDays=90",
+                url,
                 headers={"Key": abuse_key.strip(), "Accept": "application/json"}
             )
             with urllib.request.urlopen(req, timeout=5) as resp:
@@ -136,8 +139,9 @@ ddef query_external_threat_intel(ip):
 
     if vt_key:
         try:
+            url = f"https://www.virustotal.com/api/v3/ip_addresses/{clean_ip}"
             req = urllib.request.Request(
-                f"https://" + "://virustotal.com" + f"{ip}",
+                url,
                 headers={"x-apikey": vt_key.strip()}
             )
             with urllib.request.urlopen(req, timeout=5) as resp:
