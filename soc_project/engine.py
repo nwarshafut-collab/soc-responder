@@ -3,6 +3,7 @@ import io
 import os
 import json
 import urllib.request
+import urllib.parse
 from collections import defaultdict
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "YOUR_GEMINI_API_KEY_HERE")
