@@ -28,10 +28,10 @@ MITRE = {
 
 def ask_gemini_ai(prompt_text):
     import streamlit as st
-    api_key = st.secrets.get("GEMINI_API_KEY", os.environ.get("GEMINI_API_KEY", ""))
+    api_key = os.environ.get("GEMINI_API_KEY", "")
     if not api_key or api_key == "YOUR_GEMINI_API_KEY_HERE":
         return None
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent"
     payload = {"contents": [{"parts": [{"text": prompt_text}]}]}
     req = urllib.request.Request(
         url,
@@ -42,10 +42,10 @@ def ask_gemini_ai(prompt_text):
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
             result = json.loads(resp.read().decode("utf-8"))
-            return result["candidates"][0]["content"]["parts"][0]["text"].strip() # type: ignore
-    except Exception:
-        return None  # يتجاوز الخطأ بصمت ويعرض الملخص الاحترافي التلقائي
-
+            return result["candidates"][0]["content"]["parts"][0]["text"].strip()
+    except Exception as e:
+        print(f"Gemini API Error: {e}")
+        return f"Gemini API Error: {e}"
 def load_logs(file_or_path):
     if isinstance(file_or_path, str):
         with open(file_or_path, newline="", encoding="utf-8") as f:
@@ -118,8 +118,8 @@ def query_external_threat_intel(ip):
         return KNOWN_BAD_IPS.get(ip)
 
     clean_ip = urllib.parse.quote(ip.strip())
-    vt_key = st.secrets.get("VIRUSTOTAL_API_KEY", os.environ.get("VIRUSTOTAL_API_KEY", ""))
-    abuse_key = st.secrets.get("ABUSEIPDB_API_KEY", os.environ.get("ABUSEIPDB_API_KEY", ""))
+    vt_key = os.environ.get("VIRUSTOTAL_API_KEY", "")
+    abuse_key = os.environ.get("ABUSEIPDB_API_KEY", "")
 
     if abuse_key:
         try:
@@ -199,10 +199,11 @@ def summarize(c):
     steps = " -> ".join(c["stages"])
     prompt = f"Summarize SOC incident from IP {c['source_ip']} with stages {steps} and severity {c['severity']}."
     ai_response = ask_gemini_ai(prompt)
-    if ai_response:
-        return f"🤖 [AI Analysis]: {ai_response}"
-    return f"Source {c['source_ip']} targeted {', '.join(c['hosts'])}. Stages: {steps}. Severity: {c['severity']}."
 
+    if ai_response and not ai_response.startswith("Gemini API Error"):
+        return f"🤖 [AI Analysis]: {ai_response}"
+
+    return f"Source {c['source_ip']} targeted {', '.join(c['hosts'])}. Stages: {steps}. Severity: {c['severity']}."
 def recommend(c):
     acts = []
     kinds = {a["kind"] for a in c["alerts"]}
@@ -306,7 +307,7 @@ def build_dot(chain, decisions):
         stg -> tgt [color="{target_color}"];
     }}
     '''
-def incident_report(chain, decisions):
+def incident_report(chain, decisions, recovery_verified=False):   
     report_lines = [
         f"=== INCIDENT REPORT: {chain['id']} ===",
         f"Attacker IP: {chain['source_ip']}",
@@ -320,5 +321,15 @@ def incident_report(chain, decisions):
     for a in chain['actions']:
         status = action_status(a, decisions)
         report_lines.append(f"- [{a['action']}] target: {a['target']} | Status: {status}")
+
+    report_lines.append("")
+    report_lines.append("--- Recovery Verification ---")
+    if recovery_verified:
+        report_lines.append("Recovery Status: Verified (Simulated)")
+        report_lines.append("Note: Recovery verification completed (simulated).")
+        
+    else:
+        report_lines.append("Recovery Status: Pending Verification")
+        report_lines.append("Note: Recovery has not yet been verified on the target host.")
     return "\n".join(report_lines)
 

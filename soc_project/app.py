@@ -1,7 +1,43 @@
 import streamlit as st
-import pandas as pd
+import pandas as pd 
+from datetime import datetime
+from io import BytesIO
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from engine import (load_logs, run_pipeline, simulate_action, response_summary,
                     asset_table, build_dot, incident_report)
+from xml.sax.saxutils import escape
+def create_pdf_report(report_text):
+    buffer = BytesIO()
+
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=40,
+        leftMargin=40,
+        topMargin=40,
+        bottomMargin=40
+    )
+
+    styles = getSampleStyleSheet()
+
+    story = [
+        Paragraph("Irbid National University", styles["Title"]),
+        Spacer(1, 15),
+        Paragraph("SOC Incident Report", styles["Heading1"]),
+        Spacer(1, 15)
+    ]
+
+    for line in report_text.splitlines():
+        if line.strip():
+            story.append(Paragraph(escape(line), styles["BodyText"]))
+            story.append(Spacer(1, 6))
+
+    doc.build(story)
+    buffer.seek(0)
+
+    return buffer.getvalue()
 
 st.set_page_config(page_title="Agentic SOC Responder", page_icon="🛡️", layout="wide")
 
@@ -12,7 +48,8 @@ if "decisions" not in st.session_state:
     st.session_state.decisions = {}      # action id -> "approved" / "rejected"
 if "audit" not in st.session_state:
     st.session_state.audit = []          # list of log lines
-
+if "action_log" not in st.session_state:
+    st.session_state.action_log = []
 # ---------- sidebar ----------
 st.sidebar.title("🛡️ Agentic SOC Responder")
 st.sidebar.caption("Irbid National University – Graduation Project")
@@ -39,8 +76,7 @@ if not events:
 res = run_pipeline(events)
 chains = res["chains"]
 
-tab1, tab2, tab3, tab4 = st.tabs(["📊 Dashboard", "🕒 Attack Timeline", "🛡️ After Detection: Response", "🗺️ Roadmap"])
-
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Dashboard", "🕒 Attack Timeline", "🛡️ After Detection: Response", "🗺️ Roadmap", "🔄 Recovery Verification"])
 # ---------- Dashboard ----------
 with tab1:
     c1, c2, c3, c4 = st.columns(4)
@@ -105,26 +141,33 @@ with tab3:
             else:
                 if col2.button("Approve", key="ap_" + a["id"]):
                     st.session_state.decisions[a["id"]] = "approved"
-                    st.session_state.audit.append(simulate_action(a))
+                    st.session_state.action_log.append({"Action": a["action"], "Target": a["target"], "Status": "Approved", "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")})
+                    st.session_state.audit.append(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {simulate_action(a)}")
                     st.rerun()
                 if col3.button("Reject", key="rj_" + a["id"]):
                     st.session_state.decisions[a["id"]] = "rejected"
                     st.session_state.audit.append(f"[REJECTED] {a['action']} on {a['target']}")
                     st.rerun()
-        st.download_button("⬇️ Download incident report", incident_report(c, st.session_state.decisions),
-                           file_name=f"{c['id']}_report.txt", key="dl_" + c["id"])
+            report_text = incident_report(c, st.session_state.decisions, st.session_state.get("recovery_verified", False))
+            pdf_data = create_pdf_report(report_text)
+
+            st.download_button(
+                "⬇️ Download incident report (PDF)",
+                pdf_data,
+                file_name=f"{c['id']}_report.pdf",
+                mime="application/pdf",
+key="pdf_" + c["id"] + "_" + a["id"]            )
 
     st.divider()
     st.subheader("Asset status")
     st.dataframe(pd.DataFrame(asset_table(chains, st.session_state.decisions)),
                  use_container_width=True, hide_index=True)
-    st.subheader("Audit log")
-    if st.session_state.audit:
-        for line in st.session_state.audit:
-            st.code(line)
-    else:
-        st.caption("No actions taken yet.")
-
+    
+st.subheader("Action Execution Log")
+if st.session_state.action_log:
+    st.dataframe(pd.DataFrame(st.session_state.action_log), use_container_width=True, hide_index=True)
+else:
+    st.caption("No approved actions recorded yet.")
 # ---------- Roadmap ----------
 with tab4:
     st.markdown("""
@@ -139,3 +182,27 @@ severity scoring, human-approved simulated response.
 - Docker sandbox for realistic response execution
 - Evaluation: precision, recall, F1, false-positive reduction, response time
 """)
+with tab5:
+    st.markdown("### Recovery Verification")
+
+    if not st.session_state.action_log:
+        st.warning("Pending Mitigation")
+        st.write("No response action has been approved yet.")
+    else:
+        st.info("Mitigation action approved. Recovery has not yet been verified on the target host.")
+        st.metric("Recovery Status", "Pending Verification")
+        st.dataframe(
+            pd.DataFrame(st.session_state.action_log),
+            use_container_width=True,
+            hide_index=True
+        )
+        st.markdown("---")
+
+        if st.button("Run Recovery Verification (Simulated)", key="run_recovery_verification"):
+            st.session_state.recovery_verified = True
+
+        if st.session_state.get("recovery_verified", False):
+            st.success("Recovery verification completed (simulated).")
+            st.metric("Recovery Status", "Verified (Simulated)")
+        else:
+            st.warning("Pending Verification")
