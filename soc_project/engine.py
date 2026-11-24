@@ -458,7 +458,7 @@ def build_dot(chain, decisions):
     '''
 
 
-def incident_report(chain, decisions):
+def incident_report(chain, decisions, recovery_info=None):
     report_lines = [
         f"=== INCIDENT REPORT: {chain['id']} ===",
         f"Attacker IP: {chain['source_ip']}",
@@ -472,4 +472,6 @@ def incident_report(chain, decisions):
     for a in chain['actions']:
         status = action_status(a, decisions)
         report_lines.append(f"- [{a['action']}] target: {a['target']} | Status: {status}")
+    if recovery_info:
+        report_lines.append(f"\n--- Recovery Verification ---\n{recovery_info}")
     return "\n".join(report_lines)
